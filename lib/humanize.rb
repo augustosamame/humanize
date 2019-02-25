@@ -5,7 +5,8 @@ module Humanize
   # Big numbers are big: http://wiki.answers.com/Q/What_number_is_after_vigintillion&src=ansTT
 
   def humanize(locale: Humanize.config.default_locale,
-               decimals_as: Humanize.config.decimals_as)
+               decimals_as: Humanize.config.decimals_as,
+               cents: false)
     locale_class = Humanize.for_locale(locale)
 
     return locale_class::SUB_ONE_GROUPING[0] if zero?
@@ -22,7 +23,7 @@ module Humanize
 
     parts = locale_class.new.humanize(abs)
     process_decimals(locale_class, locale, parts, decimals_as)
-    Humanize.stringify(parts, sign)
+    Humanize.stringify(parts, sign, cents)
   end
 
   def self.for_locale(locale)
@@ -49,13 +50,25 @@ module Humanize
     end
   end
 
-  def self.stringify(parts, sign)
+  def self.stringify(parts, sign, cents = false)
+    unless cents
+      found_index = parts.find_index { |x| x == "and" }
+      if found_index
+        parts[found_index] = Humanize.dollarize(parts[-1])
+      else
+        parts[0] += parts[0] == "one" ? ' dollar and zero cents' : ' dollars and zero cents'
+      end
+    end
     output = parts.reverse.join(' ').squeeze(' ')
     if sign
-      "#{sign} #{output}"
+      "#{sign} #{output} #{'cents' if cents}"
     else
-      output
+      "#{output} #{'cents' if cents}"
     end
+  end
+
+  def self.dollarize(output)
+    output == "one" ? 'dollar and' : 'dollars and'
   end
 
   def process_decimals(locale_class, locale, parts, decimals_as)
@@ -77,13 +90,15 @@ module Humanize
 
     decimals_as_words = case decimals_as
                         when :digits
-                          digits = significant_digits.chars.map do |num|
-                            grouping[num.to_i]
-                          end
-
-                          (leading_zeroes + digits).join(' ')
+                          significant_digits.to_i.humanize(locale: locale, cents: true)
                         when :number
                           significant_digits.to_i.humanize(locale: locale)
+                        when :cents
+                          if significant_digits.to_i < 10
+                            (significant_digits.to_i * 10).humanize(locale: locale, cents: true)
+                          else
+                            significant_digits.to_i.humanize(locale: locale, cents: true)
+                          end
                         end
 
     parts.insert(0, decimals_as_words, locale_class::POINT)
@@ -114,7 +129,7 @@ module Humanize
 
     def initialize
       @default_locale = :en
-      @decimals_as = :digits
+      @decimals_as = :cents
     end
   end
 end
